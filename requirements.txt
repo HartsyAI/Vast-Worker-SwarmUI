@@ -1,0 +1,2 @@
+# Vast.ai's SDK, pinned: the worker relies on its PyWorker session and benchmark internals.
+vastai==1.8.2
