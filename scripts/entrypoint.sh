@@ -15,10 +15,30 @@ if [ "$MODE" = "auto" ]; then
 fi
 
 # Vast gives every instance a TLS certificate signed by Vast's root CA. Serve the gateway (and the
-# PyWorker) over it whenever it is present, so tokens never cross the network in the clear.
-if [ -z "${SWARMUI_TLS_CERT:-}" ] && [ -f /etc/instance.crt ] && [ -f /etc/instance.key ]; then
-    export SWARMUI_TLS_CERT=/etc/instance.crt SWARMUI_TLS_KEY=/etc/instance.key USE_SSL=true
+# PyWorker) over it whenever it is present, so tokens never cross the network in the clear. The key
+# is typically readable by root only, and the worker runs unprivileged, so this part runs as root:
+# the gateway gets a private copy, and the PyWorker (which only ever reads /etc/instance.key) gets
+# group read access to Vast's file. Everything after this runs as the unprivileged `swarm` user.
+if [ "$(id -u)" = "0" ] && [ -z "${SWARMUI_TLS_CERT:-}" ] && [ -f /etc/instance.crt ] && [ -f /etc/instance.key ]; then
+    install -d -m 700 -o swarm -g swarm /run/swarmui-tls
+    install -m 644 -o swarm -g swarm /etc/instance.crt /run/swarmui-tls/instance.crt
+    install -m 600 -o swarm -g swarm /etc/instance.key /run/swarmui-tls/instance.key
+    export SWARMUI_TLS_CERT=/run/swarmui-tls/instance.crt SWARMUI_TLS_KEY=/run/swarmui-tls/instance.key
+    if chgrp swarm /etc/instance.key /etc/instance.crt 2> /dev/null && chmod g+r /etc/instance.key /etc/instance.crt 2> /dev/null; then
+        export USE_SSL=true
+    elif [ "$MODE" = "serverless" ]; then
+        echo "Cannot give the PyWorker access to /etc/instance.key; refusing to serve Vast requests without TLS" >&2
+        exit 1
+    fi
 fi
+
+# Drop root for everything that follows.
+run() {
+    if [ "$(id -u)" = "0" ]; then
+        exec setpriv --reuid=swarm --regid=swarm --init-groups "$@"
+    fi
+    exec "$@"
+}
 
 # Instances may have a volume (Vast serverless cannot); use its models if it has any.
 if [ -z "${SWARMUI_MODEL_ROOT:-}" ]; then
@@ -30,10 +50,10 @@ echo "SwarmUI worker (Vast.ai) starting in '$MODE' mode; TLS: ${SWARMUI_TLS_CERT
 
 case "$MODE" in
     serverless)
-        exec /opt/worker/venv/bin/python -u /opt/worker/worker.py
+        run /opt/worker/venv/bin/python -u /opt/worker/worker.py
         ;;
     instance)
-        exec /opt/worker/venv/bin/python -u -m swarmui_worker
+        run /opt/worker/venv/bin/python -u -m swarmui_worker
         ;;
     *)
         echo "SWARM_MODE must be 'serverless', 'instance', or 'auto' (got '$MODE')" >&2

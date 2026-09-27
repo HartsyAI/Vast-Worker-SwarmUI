@@ -44,6 +44,9 @@ COPY --chown=swarm:swarm src/worker.py src/lease_controller.py /opt/worker/
 COPY --chown=swarm:swarm scripts/entrypoint.sh /opt/worker/entrypoint.sh
 ENV PYTHONPATH=/opt/worker/lib:/opt/worker
 
+# The entrypoint starts as root only to hand Vast's TLS key to the worker, then drops to `swarm`.
+USER root
+
 # 7801: the SwarmUI gateway. WORKER_PORT (set on the template, e.g. 8000): the PyWorker.
 EXPOSE 7801 8000
 ENTRYPOINT ["/bin/bash", "/opt/worker/entrypoint.sh"]

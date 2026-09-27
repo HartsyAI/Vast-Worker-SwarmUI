@@ -27,7 +27,9 @@ trap cleanup EXIT
 echo "== Instance mode over TLS =="
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1" \
     -keyout "$WORK/instance.key" -out "$WORK/instance.crt" 2> /dev/null
-chmod 644 "$WORK/instance.key" "$WORK/instance.crt"
+# Like Vast: the key is readable by root only, and the mount is read-only.
+chmod 600 "$WORK/instance.key"
+chmod 644 "$WORK/instance.crt"
 TOKEN="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48)"
 docker run -d --name "$NAME" -p 127.0.0.1:17803:7801 -e SWARMUI_WORKER_TOKEN="$TOKEN" \
     -v "$WORK/instance.crt:/etc/instance.crt:ro" -v "$WORK/instance.key:/etc/instance.key:ro" "$IMAGE" > /dev/null
