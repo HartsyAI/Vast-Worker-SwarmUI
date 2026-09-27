@@ -49,9 +49,14 @@ docker rm -f "$NAME" > /dev/null
 
 echo "== Serverless refusals =="
 set +e
-docker run --rm -e SWARM_MODE=serverless "$IMAGE" >> "$LOG" 2>&1
+out="$(docker run --rm -e SWARM_MODE=serverless "$IMAGE" 2>&1)"; code=$?
+echo "$out" >> "$LOG"
+[ $code -ne 0 ] && echo "$out" | grep -q "without TLS" || fail "serverless mode started without TLS (exit $code)"
+# Writable, like on Vast, so the entrypoint can grant the PyWorker access to the key.
+TLS_MOUNTS=(-v "$WORK/instance.crt:/etc/instance.crt" -v "$WORK/instance.key:/etc/instance.key")
+docker run --rm "${TLS_MOUNTS[@]}" -e SWARM_MODE=serverless "$IMAGE" >> "$LOG" 2>&1
 [ $? -eq 2 ] || fail "serverless mode started without Vast's environment"
-docker run --rm -e SWARM_MODE=serverless -e UNSECURED=true -e PUBLIC_IPADDR=1.2.3.4 -e WORKER_PORT=8000 \
+docker run --rm "${TLS_MOUNTS[@]}" -e SWARM_MODE=serverless -e UNSECURED=true -e PUBLIC_IPADDR=1.2.3.4 -e WORKER_PORT=8000 \
     -e VAST_TCP_PORT_8000=40000 -e CONTAINER_ID=1 -e REPORT_ADDR=http://127.0.0.1:1 "$IMAGE" >> "$LOG" 2>&1
 [ $? -eq 2 ] || fail "serverless mode started with UNSECURED=true"
 set -e

@@ -19,17 +19,24 @@ fi
 # is typically readable by root only, and the worker runs unprivileged, so this part runs as root:
 # the gateway gets a private copy, and the PyWorker (which only ever reads /etc/instance.key) gets
 # group read access to Vast's file. Everything after this runs as the unprivileged `swarm` user.
-if [ "$(id -u)" = "0" ] && [ -z "${SWARMUI_TLS_CERT:-}" ] && [ -f /etc/instance.crt ] && [ -f /etc/instance.key ]; then
-    install -d -m 700 -o swarm -g swarm /run/swarmui-tls
-    install -m 644 -o swarm -g swarm /etc/instance.crt /run/swarmui-tls/instance.crt
-    install -m 600 -o swarm -g swarm /etc/instance.key /run/swarmui-tls/instance.key
-    export SWARMUI_TLS_CERT=/run/swarmui-tls/instance.crt SWARMUI_TLS_KEY=/run/swarmui-tls/instance.key
+if [ "$(id -u)" = "0" ] && [ -f /etc/instance.crt ] && [ -f /etc/instance.key ]; then
+    if [ -z "${SWARMUI_TLS_CERT:-}" ]; then
+        install -d -m 700 -o swarm -g swarm /run/swarmui-tls
+        install -m 644 -o swarm -g swarm /etc/instance.crt /run/swarmui-tls/instance.crt
+        install -m 600 -o swarm -g swarm /etc/instance.key /run/swarmui-tls/instance.key
+        export SWARMUI_TLS_CERT=/run/swarmui-tls/instance.crt SWARMUI_TLS_KEY=/run/swarmui-tls/instance.key
+    fi
+    # The PyWorker only ever reads /etc/instance.key, whatever certificate the gateway uses.
     if chgrp swarm /etc/instance.key /etc/instance.crt 2> /dev/null && chmod g+r /etc/instance.key /etc/instance.crt 2> /dev/null; then
         export USE_SSL=true
-    elif [ "$MODE" = "serverless" ]; then
-        echo "Cannot give the PyWorker access to /etc/instance.key; refusing to serve Vast requests without TLS" >&2
-        exit 1
     fi
+fi
+
+# Fail closed: a serverless worker hands out gateway tokens from the PyWorker's /lease route, so it must never
+# serve that route, or the gateway, without TLS.
+if [ "$MODE" = "serverless" ] && { [ "${USE_SSL:-}" != "true" ] || [ -z "${SWARMUI_TLS_CERT:-}" ]; }; then
+    echo "Refusing to start a serverless worker without TLS: Vast.ai's /etc/instance.crt and /etc/instance.key must exist and be usable (the container must start as root to hand them to the worker)." >&2
+    exit 1
 fi
 
 # Drop root for everything that follows.
