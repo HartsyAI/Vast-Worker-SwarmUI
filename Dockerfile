@@ -9,7 +9,7 @@
 #     --build-arg BAKE_MODEL_URL=https://.../model.safetensors --build-arg BAKE_MODEL_SHA256=<sha256> \
 #     -t you/swarmui-worker-vast:with-model .
 
-ARG BASE_IMAGE=hartsy/swarmui-worker-base
+ARG BASE_IMAGE=kalebbroo/swarmui-worker-base
 ARG BASE_VERSION=edge
 ARG BACKEND=hartsyinference
 FROM ${BASE_IMAGE}:${BASE_VERSION}-${BACKEND}
