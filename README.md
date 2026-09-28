@@ -86,7 +86,10 @@ The Cloud Backends extension is the intended client. For reference, with Vast's 
 
 ```bash
 PYTHONPATH=../SwarmUI-Worker-Base/src python -m pytest tests
-docker build --build-arg BACKEND=hartsyinference --build-arg BASE_VERSION=edge -t swarmui-worker-vast:local .
+# Until base images are published, build the base locally first (CI does the same):
+git clone https://github.com/HartsyAI/SwarmUI-Worker-Base ../SwarmUI-Worker-Base
+docker build --build-arg BACKEND=hartsyinference -t hartsy/swarmui-worker-base:source-hartsyinference ../SwarmUI-Worker-Base
+docker build --build-arg BACKEND=hartsyinference --build-arg BASE_VERSION=source -t swarmui-worker-vast:local .
 bash tests/smoke/smoke.sh swarmui-worker-vast:local
 ```
 
