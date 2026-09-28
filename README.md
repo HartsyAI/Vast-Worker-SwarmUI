@@ -6,7 +6,7 @@ It is built on [SwarmUI-Worker-Base](https://github.com/HartsyAI/SwarmUI-Worker-
 
 ## Images
 
-`hartsy/swarmui-worker-vast:<version>-<backend>` on Docker Hub. The backend is `hartsyinference` (recommended for Vast: a small image and a fast cold start) or `comfyui`. Pin a release version in production.
+`kalebbroo/swarmui-worker-vast:<version>-<backend>` on Docker Hub. The backend is `hartsyinference` (recommended for Vast: a small image and a fast cold start) or `comfyui`. Pin a release version in production.
 
 **Vast Serverless cannot attach a volume, so a serverless worker needs its model inside the image.** Build your own image with the model baked in:
 
@@ -88,7 +88,7 @@ The Cloud Backends extension is the intended client. For reference, with Vast's 
 PYTHONPATH=../SwarmUI-Worker-Base/src python -m pytest tests
 # Until base images are published, build the base locally first (CI does the same):
 git clone https://github.com/HartsyAI/SwarmUI-Worker-Base ../SwarmUI-Worker-Base
-docker build --build-arg BACKEND=hartsyinference -t hartsy/swarmui-worker-base:source-hartsyinference ../SwarmUI-Worker-Base
+docker build --build-arg BACKEND=hartsyinference -t kalebbroo/swarmui-worker-base:source-hartsyinference ../SwarmUI-Worker-Base
 docker build --build-arg BACKEND=hartsyinference --build-arg BASE_VERSION=source -t swarmui-worker-vast:local .
 bash tests/smoke/smoke.sh swarmui-worker-vast:local
 ```
