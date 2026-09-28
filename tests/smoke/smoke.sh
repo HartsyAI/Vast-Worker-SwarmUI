@@ -35,14 +35,14 @@ docker run -d --name "$NAME" -p 127.0.0.1:17803:7801 -e SWARMUI_WORKER_TOKEN="$T
     -v "$WORK/instance.crt:/etc/instance.crt:ro" -v "$WORK/instance.key:/etc/instance.key:ro" "$IMAGE" > /dev/null
 for _ in $(seq 1 180); do
     code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$WORK/instance.crt" -X POST \
-        -H "Authorization: Bearer $TOKEN" -d '{}' https://127.0.0.1:17803/API/GetNewSession || true)"
+        -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}' https://127.0.0.1:17803/API/GetNewSession || true)"
     [ "$code" = "200" ] && break
     sleep 5
 done
 [ "$code" = "200" ] || fail "instance-mode SwarmUI never answered over TLS (HTTP $code)"
-code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$WORK/instance.crt" -X POST -d '{}' https://127.0.0.1:17803/API/GetNewSession)"
+code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$WORK/instance.crt" -X POST -H 'Content-Type: application/json' -d '{}' https://127.0.0.1:17803/API/GetNewSession)"
 [ "$code" = "401" ] || fail "instance mode accepted a request without the token (HTTP $code)"
-code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -d '{}' http://127.0.0.1:17803/API/GetNewSession || true)"
+code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:17803/API/GetNewSession || true)"
 [ "$code" != "200" ] || fail "gateway answered over plain HTTP while TLS was configured"
 docker logs "$NAME" 2>&1 | grep -q "$TOKEN" && fail "worker token appears in container logs"
 docker rm -f "$NAME" > /dev/null
