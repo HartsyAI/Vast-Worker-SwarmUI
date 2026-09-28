@@ -52,7 +52,7 @@ For Vast Instances (rented machines), the published image works as is: attach a 
    | Max workers | the most workers you want running at once | |
    | Target utilization | `0.9` (the default) | |
 
-4. **Workergroup:** add one to the endpoint using the template, with a GPU filter of 16 GB VRAM or more.
+4. **Workergroup:** add one to the endpoint using the template, with a GPU filter of 16 GB VRAM or more. For the HartsyInference backend also require CUDA 13.0 or newer (`cuda_max_good >= 13.0`): its GPU kernels need a CUDA 13 driver.
 5. **Cloud Backends:** in SwarmUI, add a **Cloud Backends** backend, enable Vast.ai Serverless, and enter the endpoint name. Put your Vast API key in User Settings.
 
 ## Instance setup
