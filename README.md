@@ -26,7 +26,7 @@ For Vast Instances (rented machines), the published image works as is: attach a 
 - **A lease rides on the session.** Calling `/lease` with the session returns the worker's HTTPS address and an access token for SwarmUI. When the session ends (the client lets it expire, or ends it), the token is revoked at once and Vast scales the worker down.
 - **Security:**
   - SwarmUI never listens on a public port.
-  - The gateway and the PyWorker both serve TLS with the certificate Vast issues to every instance (`/etc/instance.crt`, signed by Vast's root CA).
+  - The gateway and the PyWorker both serve TLS with a certificate the worker requests from Vast at startup (signed by Vast's root CA), as Vast's own images do.
   - Every `/lease` request must carry Vast's signed routing grant. The worker refuses to start if signature checks are disabled (`UNSECURED`).
 - **A crashed client costs at most one session lifetime.** Nothing keeps a worker alive except a client that keeps renewing.
 
@@ -59,7 +59,7 @@ For Vast Instances (rented machines), the published image works as is: attach a 
 
 The Cloud Backends extension rents, starts, and stops Vast instances for you (Vast.ai Instances section of the card), and sets the instance's token.
 
-To run one by hand: rent an instance with this image, expose port 7801, set `SWARMUI_WORKER_TOKEN` to a random value of at least 32 characters, and attach a volume with your models at `/workspace`. The gateway serves HTTPS with the instance's Vast certificate. Clients must trust [Vast's root certificate](https://console.vast.ai/static/jvastai_root.cer).
+To run one by hand: rent an instance with this image in entrypoint mode (runtype `args`; the default SSH mode replaces the image's entrypoint) on a host with plenty of direct ports, expose port 7801, set `SWARMUI_WORKER_TOKEN` to a random value of at least 32 characters, and attach a volume with your models at `/workspace`. The gateway serves HTTPS with the instance's Vast certificate. Clients must trust [Vast's root certificate](https://console.vast.ai/static/jvastai_root.cer).
 
 ## Configuration
 
