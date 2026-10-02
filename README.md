@@ -8,7 +8,20 @@ It is built on [SwarmUI-Worker-Base](https://github.com/HartsyAI/SwarmUI-Worker-
 
 `kalebbroo/swarmui-worker-vast:<version>-<backend>` on Docker Hub. The backend is `hartsyinference` (recommended for Vast: a small image and a fast cold start) or `comfyui`. Pin a release version in production.
 
-**Vast Serverless cannot attach a volume, so a serverless worker needs its model inside the image.** Build your own image with the model baked in:
+**Vast Serverless cannot attach a volume, so a serverless worker needs its model inside the image.** Ready-made images with a model baked in:
+
+| Image | Model | Notes |
+|---|---|---|
+| `kalebbroo/swarmui-worker-vast:<version>-hartsyinference-krea2-turbo` | [Krea 2 Turbo](https://hartsy.ai/Home?type=models&id=d3ff7c46-7f17-48db-bf1e-14fb613872ba) (fp8) with its Qwen3-VL 4B text encoder and Qwen-Image VAE | 8 steps, CFG 1, 1024x1024. About 18 GB of models: use a GPU with 24 GB VRAM and a 60 GB container disk. |
+
+To bake other models, add a list to `bake/` (one `<path under Models>  <sha256>  <url>` line per file) and run the **Bake models** workflow, or build locally:
+
+```bash
+scripts/bake_dockerfile.sh bake/krea2-turbo.txt kalebbroo/swarmui-worker-vast:1.0.0-hartsyinference > Dockerfile.bake
+docker build -f Dockerfile.bake -t <your-dockerhub-user>/swarmui-worker-vast:1.0.0-mymodel .
+```
+
+Or bake a single model while building the image itself:
 
 ```bash
 docker build --build-arg BACKEND=hartsyinference --build-arg BASE_VERSION=1.0.0 \
@@ -32,7 +45,7 @@ For Vast Instances (rented machines), the published image works as is: attach a 
 
 ## Serverless setup
 
-1. **Image:** build and push an image with your model (see above).
+1. **Image:** a baked image from the table above, or your own (see above).
 2. **Template** ([Templates, New](https://cloud.vast.ai/templates/)):
 
    | Setting | Value |

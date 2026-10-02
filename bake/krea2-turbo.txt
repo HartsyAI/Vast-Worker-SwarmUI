@@ -1,0 +1,7 @@
+# Krea 2 Turbo for HartsyInference or ComfyUI: 8 steps, CFG 1, 1024x1024.
+# <path under SwarmUI's Models folder>  <sha256>  <url>
+# The diffusion model comes from Hartsy; its text encoder and VAE are the files SwarmUI itself downloads for Krea 2,
+# under the same names, so nothing is downloaded again at run time.
+diffusion_models/krea-2-turbo-1_0-krea-2-turbo-base-fp8.safetensors  eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1  https://hartsy.ai/download/d3ff7c46-7f17-48db-bf1e-14fb613872ba?type=model
+text_encoders/qwen3vl_4b.safetensors  54bd5144df0bbc25dd6ccadfcb826b521445a1b06ae5a42570bdd2974ca87094  https://huggingface.co/Comfy-Org/Qwen3-VL/resolve/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors
+VAE/QwenImage/qwen_image_vae.safetensors  a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f  https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors

@@ -1,0 +1,77 @@
+name: Bake models
+
+# Adds the models in a bake list (bake/<name>.txt) to a published worker image, for Vast.ai Serverless, which
+# cannot attach a volume. Pull requests and main push the result next to the image they start from:
+#   kalebbroo/swarmui-worker-vast:<from tag>-<bake name>, e.g. edge-hartsyinference-krea2-turbo
+# Run it by hand to bake onto a release, e.g. from_tag 1.0.0-hartsyinference.
+
+on:
+  push:
+    branches: [main]
+    paths: ["bake/**", "scripts/bake_dockerfile.sh", ".github/workflows/bake.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["bake/**", "scripts/bake_dockerfile.sh", ".github/workflows/bake.yml"]
+  workflow_dispatch:
+    inputs:
+      from_tag:
+        description: Worker image tag to bake onto
+        default: edge-hartsyinference
+      bake:
+        description: Bake list name (bake/<name>.txt)
+        default: krea2-turbo
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bake-${{ github.ref }}-${{ inputs.bake || 'krea2-turbo' }}
+  cancel-in-progress: true
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      FROM_IMAGE: kalebbroo/swarmui-worker-vast:${{ inputs.from_tag || 'edge-hartsyinference' }}
+      BAKE: ${{ inputs.bake || 'krea2-turbo' }}
+      CAN_PUSH: ${{ vars.PUBLISH_IMAGES == 'true' && secrets.DOCKERHUB_TOKEN != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    steps:
+      # The models alone are tens of GB; a hosted runner starts with ~14 GB free.
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost \
+                      /usr/local/share/powershell /usr/share/swift /opt/hostedtoolcache
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Tag
+        id: tag
+        run: |
+          from_tag="${FROM_IMAGE##*:}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "image=kalebbroo/swarmui-worker-vast:pr-${{ github.event.number }}-${from_tag#edge-}-${BAKE}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=kalebbroo/swarmui-worker-vast:${from_tag}-${BAKE}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: |
+          scripts/bake_dockerfile.sh "bake/${BAKE}.txt" "$FROM_IMAGE" > Dockerfile.bake
+          cat Dockerfile.bake
+          docker build -f Dockerfile.bake -t "${{ steps.tag.outputs.image }}" .
+          docker image ls "${{ steps.tag.outputs.image }}"
+          df -h /
+
+      - name: Log in to Docker Hub
+        if: env.CAN_PUSH == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push
+        if: env.CAN_PUSH == 'true'
+        run: docker push "${{ steps.tag.outputs.image }}"
