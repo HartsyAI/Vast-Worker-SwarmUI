@@ -14,9 +14,38 @@ if [ "$MODE" = "auto" ]; then
     if [ -n "${REPORT_ADDR:-}" ]; then MODE=serverless; else MODE=instance; fi
 fi
 
-# Vast gives every instance a TLS certificate signed by Vast's root CA. Serve the gateway (and the
-# PyWorker) over it whenever it is present, so tokens never cross the network in the clear. The key
-# is typically readable by root only, and the worker runs unprivileged, so this part runs as root:
+# Vast signs a certificate for this instance on request, the way Vast's own images get theirs: a key and CSR made
+# here, posted to the console with the instance's ID. Kept only if the answer is a certificate for that key; on any
+# failure the worker carries on without TLS (an instance serves plain HTTP; a serverless worker refuses to start).
+request_vast_cert() {
+    local label="${VAST_CONTAINERLABEL:-}" id dir
+    id="${CONTAINER_ID:-${label#C.}}"
+    [ -n "$id" ] && command -v openssl > /dev/null && command -v curl > /dev/null || return 1
+    dir="$(mktemp -d)"
+    if openssl req -newkey rsa:2048 -nodes -sha256 -subj "/C=US/ST=CA/CN=pyworker.vast.ai/" \
+            -addext "subjectAltName=IP:0.0.0.0" -keyout "$dir/instance.key" -out "$dir/instance.csr" 2> /dev/null \
+        && curl -fsS --retry 4 --retry-connrefused --retry-delay 2 --max-time 30 \
+            -H 'Content-Type: application/octet-stream' --data-binary "@$dir/instance.csr" \
+            -o "$dir/instance.crt" "https://console.vast.ai/api/v0/sign_cert/?instance_id=$id" \
+        && [ "$(openssl x509 -in "$dir/instance.crt" -noout -pubkey 2> /dev/null)" = "$(openssl pkey -in "$dir/instance.key" -pubout 2> /dev/null)" ]; then
+        install -m 644 "$dir/instance.crt" /etc/instance.crt
+        install -m 600 "$dir/instance.key" /etc/instance.key
+        rm -rf "$dir"
+        return 0
+    fi
+    rm -rf "$dir"
+    return 1
+}
+if [ "$(id -u)" = "0" ] && [ ! -f /etc/instance.crt ]; then
+    if request_vast_cert; then
+        echo "Got this instance's TLS certificate from Vast.ai"
+    else
+        echo "Could not get a TLS certificate from Vast.ai" >&2
+    fi
+fi
+
+# Serve the gateway (and the PyWorker) over Vast's instance certificate whenever it is present, so tokens never
+# cross the network in the clear. The key is typically readable by root only, and the worker runs unprivileged, so this part runs as root:
 # the gateway gets a private copy, and the PyWorker (which only ever reads /etc/instance.key) gets
 # group read access to Vast's file. Everything after this runs as the unprivileged `swarm` user.
 if [ "$(id -u)" = "0" ] && [ -f /etc/instance.crt ] && [ -f /etc/instance.key ]; then
