@@ -1,8 +1,8 @@
 """Vast.ai Serverless worker for Hartsy's SwarmUI worker image.
 
 Built on Vast's official PyWorker (the `vastai` SDK's serverless server), as Vast's serverless docs
-require: only a PyWorker registers with the autoscaler, verifies Vast's signed request grants, and
-reports load.
+require: only a PyWorker registers with the autoscaler and reports load. The SDK verifies Vast's signed
+grant on handler routes only, so `secure_session_create` adds the same check to `/session/create`.
 
 How a Swarm client uses it (the Cloud Backends extension does all of this):
   1. `/route/` then `/session/create` with cost SESSION_COST and lifetime = the idle window. One
@@ -24,21 +24,63 @@ import sys
 from contextlib import asynccontextmanager
 
 from aiohttp import web
+from vastai.serverless.server.lib.data_types import AuthData
 from vastai.serverless.server.worker import BenchmarkConfig, HandlerConfig, Worker, WorkerConfig as VastConfig
 
-from lease_controller import BENCH_SECONDS, BENCH_WORKLOAD, LeaseController
+from lease_controller import BENCH_SECONDS, BENCH_WORKLOAD, SESSION_COST, LeaseController
 from swarmui_worker import logs
 from swarmui_worker.config import ConfigError, WorkerConfig
 from swarmui_worker.supervisor import BackgroundSupervisor
 
 log = logging.getLogger("vast_worker")
 CONTROL_PORT = int(os.environ.get("LEASE_CONTROL_PORT", "18000"))
+MAX_SESSION_LIFETIME = 3600.0
+"""Longest lifetime a session may ask for; each renewal adds one lifetime."""
+
+
+class _JsonBody:
+    """Stands in for the request when re-feeding a checked session request to the SDK's handler, which only reads JSON."""
+
+    def __init__(self, data: dict):
+        self._data = data
+
+    async def json(self) -> dict:
+        return self._data
+
+
+def secure_session_create(backend) -> None:
+    """Requires Vast's signed grant on /session/create, caps the session lifetime, and fixes the session cost.
+
+    The SDK (vastai 1.8.2, pinned) opens a session for any request without checking its signature, and takes
+    the cost and lifetime as given. Must run before `run_async`, which registers the route.
+    """
+    original = backend.session_create_handler
+    check_signature = backend._Backend__check_signature
+
+    async def create(request: web.Request) -> web.StreamResponse:
+        try:
+            data = await request.json()
+            auth = AuthData.from_json_msg(data.get("auth_data") or {})
+        except Exception:
+            return web.json_response({"error": "invalid session request"}, status=422)
+        if not check_signature(auth):
+            return web.Response(status=401)
+        payload = dict(data.get("payload") or {})
+        lifetime = payload.get("lifetime", 60.0)
+        if isinstance(lifetime, bool) or not isinstance(lifetime, (int, float)) or lifetime != lifetime:
+            lifetime = 60.0
+        payload["lifetime"] = min(max(float(lifetime), 10.0), MAX_SESSION_LIFETIME)
+        data["payload"] = payload
+        data["auth_data"] = {**data["auth_data"], "cost": SESSION_COST}
+        return await original(_JsonBody(data))
+
+    backend.session_create_handler = create
 
 
 def public_url(config: WorkerConfig) -> str:
     """The gateway's public address, as Vast maps it (VAST_TCP_PORT_<internal port>)."""
     ip = os.environ["PUBLIC_IPADDR"]
-    port = os.environ.get(f"VAST_TCP_PORT_{config.public_port}", str(config.public_port))
+    port = os.environ[f"VAST_TCP_PORT_{config.public_port}"]
     scheme = "https" if config.tls_cert else "http"
     return f"{scheme}://{ip}:{port}"
 
@@ -74,6 +116,7 @@ def build(config: WorkerConfig) -> tuple[Worker, LeaseController, BackgroundSupe
         ],
     )
     worker = Worker(vast_config)
+    secure_session_create(worker.backend)
     worker_ref["worker"] = worker
     return worker, controller, supervisor
 
@@ -108,8 +151,9 @@ def main() -> int:
     if os.environ.get("UNSECURED", "").lower() in ("1", "true", "yes"):
         log.error("UNSECURED is set, which disables verification of Vast's signed requests; refusing to start")
         return 2
-    port_var = f"VAST_TCP_PORT_{os.environ.get('WORKER_PORT', '')}"
-    for required in ("PUBLIC_IPADDR", "WORKER_PORT", "CONTAINER_ID", "REPORT_ADDR", port_var):
+    worker_port_var = f"VAST_TCP_PORT_{os.environ.get('WORKER_PORT', '')}"
+    gateway_port_var = f"VAST_TCP_PORT_{config.public_port}"
+    for required in ("PUBLIC_IPADDR", "WORKER_PORT", "CONTAINER_ID", "REPORT_ADDR", worker_port_var, gateway_port_var):
         if not os.environ.get(required):
             log.error("%s is not set; this worker only runs on Vast.ai Serverless", required)
             return 2

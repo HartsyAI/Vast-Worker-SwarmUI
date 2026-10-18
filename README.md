@@ -21,15 +21,7 @@ scripts/bake_dockerfile.sh bake/krea2-turbo.txt kalebbroo/swarmui-worker-vast:1.
 docker build -f Dockerfile.bake -t <your-dockerhub-user>/swarmui-worker-vast:1.0.0-mymodel .
 ```
 
-Or bake a single model while building the image itself:
-
-```bash
-docker build --build-arg BACKEND=hartsyinference --build-arg BASE_VERSION=1.0.0 \
-  --build-arg BAKE_MODEL_URL=https://example.com/models/my-model.safetensors \
-  --build-arg BAKE_MODEL_SHA256=<sha256 of the file> \
-  -t <your-dockerhub-user>/swarmui-worker-vast:1.0.0-mymodel .
-docker push <your-dockerhub-user>/swarmui-worker-vast:1.0.0-mymodel
-```
+Model URLs are recorded in the image's build history, so never bake from a URL that carries a secret (such as a presigned link).
 
 For Vast Instances (rented machines), the published image works as is: attach a volume with your models.
 
@@ -40,7 +32,8 @@ For Vast Instances (rented machines), the published image works as is: attach a 
 - **Security:**
   - SwarmUI never listens on a public port.
   - The gateway and the PyWorker both serve TLS with a certificate the worker requests from Vast at startup (signed by Vast's root CA), as Vast's own images do.
-  - Every `/lease` request must carry Vast's signed routing grant. The worker refuses to start if signature checks are disabled (`UNSECURED`).
+  - Every `/session/create` and `/lease` request must carry Vast's signed routing grant. The worker refuses to start if signature checks are disabled (`UNSECURED`).
+  - A session's cost is fixed at one full worker, and its lifetime is capped at one hour per renewal, whatever the request asks for.
 - **A crashed client costs at most one session lifetime.** Nothing keeps a worker alive except a client that keeps renewing.
 
 ## Serverless setup
@@ -53,7 +46,7 @@ For Vast Instances (rented machines), the published image works as is: attach a 
    | Image | your image from step 1 |
    | Launch mode | Docker ENTRYPOINT |
    | Docker options | `-p 7801:7801 -p 8000:8000 -e WORKER_PORT=8000` |
-   | Container disk | above the image's unpacked size (e.g. 40 GB). Vast's 8 GB default is too small, and an undersized disk fails without naming the cause. |
+   | Container disk | well above the image's unpacked size: 60 GB for the Krea 2 Turbo image. Vast's 8 GB default is too small, and an undersized disk fails without naming the cause. |
 
 3. **Endpoint** ([Serverless](https://cloud.vast.ai/serverless/)):
 
@@ -83,7 +76,7 @@ To run one by hand: rent an instance with this image in entrypoint mode (runtype
 | `SWARMUI_MODEL_ROOT` | the image's models, or `/workspace/Models` on instances | Where the models are. |
 | `SWARM_MODE` | `auto` | `serverless` or `instance`. Detected from `REPORT_ADDR`, which Vast sets only for serverless workers. |
 
-The base image's full list is in the [SwarmUI-Worker-Base README](https://github.com/HartsyAI/SwarmUI-Worker-Base#configuration).
+The base image's full list is in the [SwarmUI-Worker-Base README](https://github.com/HartsyAI/SwarmUI-Worker-Base#configuration). On Vast Serverless the session's lifetime decides when a worker is released, so the base's idle and lease-length settings apply to instances only.
 
 ## Protocol
 
@@ -92,15 +85,16 @@ The Cloud Backends extension is the intended client. For reference, with Vast's 
 1. `start_endpoint_session(endpoint, cost=100, lifetime=<idle seconds>, on_close_route="/lease/end")`
 2. `POST /lease` through the session, with payload `{"session_id": <id>}`. It returns `{"success": true, "public_url", "token", "worker_id", "protocol": 2, "idle_seconds"}`.
 3. Use SwarmUI at `public_url` with `Authorization: Bearer <token>`.
-4. While in use, renew by repeating step 2, but only when the session's remaining time is below one lifetime (read it with `/session/get`). Each call *adds* a full lifetime, so renewing on a timer would keep the worker alive long after you stop.
+4. While in use, renew by repeating step 2, but only when the session's remaining time is below about half a lifetime (read it with `/session/get`; the extension renews below half a lifetime plus 15 seconds). Each call *adds* a full lifetime, so renewing on a timer would keep the worker alive long after you stop.
 5. Stop renewing, or call `/session/end`, to release the worker.
 
 ## Development
 
 ```bash
-PYTHONPATH=../SwarmUI-Worker-Base/src python -m pytest tests
-# Until base images are published, build the base locally first (CI does the same):
 git clone https://github.com/HartsyAI/SwarmUI-Worker-Base ../SwarmUI-Worker-Base
+PYTHONPATH=../SwarmUI-Worker-Base/src python -m pytest tests
+docker build --build-arg BACKEND=hartsyinference -t swarmui-worker-vast:local .
+# To build on unreleased base changes instead (CI does this for edge and PR images):
 docker build --build-arg BACKEND=hartsyinference -t kalebbroo/swarmui-worker-base:source-hartsyinference ../SwarmUI-Worker-Base
 docker build --build-arg BACKEND=hartsyinference --build-arg BASE_VERSION=source -t swarmui-worker-vast:local .
 bash tests/smoke/smoke.sh swarmui-worker-vast:local

@@ -25,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: bake-${{ github.ref }}-${{ inputs.bake || 'krea2-turbo' }}
+  group: bake-${{ github.ref }}-${{ inputs.from_tag || 'edge-hartsyinference' }}-${{ inputs.bake || 'krea2-turbo' }}
   cancel-in-progress: true
 
 jobs:
