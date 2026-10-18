@@ -57,12 +57,12 @@ TLS_MOUNTS=(-v "$WORK/instance.crt:/etc/instance.crt" -v "$WORK/instance.key:/et
 docker run --rm "${TLS_MOUNTS[@]}" -e SWARM_MODE=serverless "$IMAGE" >> "$LOG" 2>&1
 [ $? -eq 2 ] || fail "serverless mode started without Vast's environment"
 docker run --rm "${TLS_MOUNTS[@]}" -e SWARM_MODE=serverless -e UNSECURED=true -e PUBLIC_IPADDR=1.2.3.4 -e WORKER_PORT=8000 \
-    -e VAST_TCP_PORT_8000=40000 -e CONTAINER_ID=1 -e REPORT_ADDR=http://127.0.0.1:1 "$IMAGE" >> "$LOG" 2>&1
+    -e VAST_TCP_PORT_8000=40000 -e VAST_TCP_PORT_7801=40001 -e CONTAINER_ID=1 -e REPORT_ADDR=http://127.0.0.1:1 "$IMAGE" >> "$LOG" 2>&1
 [ $? -eq 2 ] || fail "serverless mode started with UNSECURED=true"
 set -e
 
 echo "== PyWorker wiring =="
-docker run --rm -e PUBLIC_IPADDR=1.2.3.4 -e WORKER_PORT=8000 -e VAST_TCP_PORT_8000=40000 -e CONTAINER_ID=1 \
+docker run --rm -e PUBLIC_IPADDR=1.2.3.4 -e WORKER_PORT=8000 -e VAST_TCP_PORT_8000=40000 -e VAST_TCP_PORT_7801=40001 -e CONTAINER_ID=1 \
     -e REPORT_ADDR=http://127.0.0.1:1 --entrypoint /opt/worker/venv/bin/python "$IMAGE" -c '
 import asyncio, worker
 from swarmui_worker.config import WorkerConfig
@@ -72,6 +72,9 @@ async def main():
     assert w.backend.max_sessions == 1
     assert w.backend.benchmark_handler.endpoint == "/bench"
     assert isinstance(w.backend.sessions, dict)
+    # /session/create must be the signature-checking wrapper, not the SDK default.
+    assert w.backend.session_create_handler.__name__ == "create", w.backend.session_create_handler
+    assert ctrl._public_url == "https://1.2.3.4:40001" or ctrl._public_url == "http://1.2.3.4:40001", ctrl._public_url
     print("WIRING OK")
 asyncio.run(main())
 ' 2>&1 | tee -a "$LOG" | grep -q "WIRING OK" || fail "PyWorker wiring check failed"
