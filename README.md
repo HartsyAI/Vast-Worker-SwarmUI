@@ -65,14 +65,14 @@ For Vast Instances (rented machines), the published image works as is: attach a 
 
 The Cloud Backends extension rents, starts, and stops Vast instances for you (Vast.ai Instances section of the card), and sets the instance's token.
 
-To run one by hand: rent an instance with this image in entrypoint mode (runtype `args`; the default SSH mode replaces the image's entrypoint) on a host with plenty of direct ports, expose port 7801, set `SWARMUI_WORKER_TOKEN` to a random value of at least 32 characters, and attach a volume with your models at `/workspace`. The gateway serves HTTPS with the instance's Vast certificate. Clients must trust [Vast's root certificate](https://console.vast.ai/static/jvastai_root.cer).
+To run one by hand: rent an instance with this image in entrypoint mode (runtype `args`; the default SSH mode replaces the image's entrypoint) on a host with plenty of direct ports, expose port 7801, set the environment variable `SWARMUI_WORKER_CONFIG` to `{"worker_token": "<token>"}` (base64url-encode the JSON if Vast does not pass the quotes through), where the token is a random value of at least 32 characters, and attach a volume with your models at `/workspace`. The gateway serves HTTPS with the instance's Vast certificate. Clients must trust [Vast's root certificate](https://console.vast.ai/static/jvastai_root.cer).
 
 ## Configuration
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `WORKER_PORT` | *(template)* | The PyWorker's port. Required for serverless. |
-| `SWARMUI_WORKER_TOKEN` | *(none)* | **Instances only.** Serverless refuses it, because each lease gets its own token. |
+| `SWARMUI_WORKER_CONFIG` | *(none)* | The [worker config](https://github.com/HartsyAI/SwarmUI-Worker-Base#worker-config), one JSON object: `worker_token`, `public_port` and `volume_path`. Instances need a `worker_token`. Serverless refuses one, because each lease gets its own token. Without `volume_path`, the volume is looked for at `/workspace`. |
 | `SWARMUI_MODEL_ROOT` | the image's models, or `/workspace/Models` on instances | Where the models are. |
 | `SWARM_MODE` | `auto` | `serverless` or `instance`. Detected from `REPORT_ADDR`, which Vast sets only for serverless workers. |
 

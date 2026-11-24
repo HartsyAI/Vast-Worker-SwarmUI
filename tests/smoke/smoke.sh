@@ -31,7 +31,9 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=127.0.0.1" -addext 
 chmod 600 "$WORK/instance.key"
 chmod 644 "$WORK/instance.crt"
 TOKEN="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48)"
-docker run -d --name "$NAME" -p 127.0.0.1:17803:7801 -e SWARMUI_WORKER_TOKEN="$TOKEN" \
+# base64url without padding, as the Cloud Backends extension sends it.
+CONFIG="$(printf '{"worker_token":"%s"}' "$TOKEN" | base64 -w0 | tr '+/' '-_' | tr -d '=')"
+docker run -d --name "$NAME" -p 127.0.0.1:17803:7801 -e SWARMUI_WORKER_CONFIG="$CONFIG" \
     -v "$WORK/instance.crt:/etc/instance.crt:ro" -v "$WORK/instance.key:/etc/instance.key:ro" "$IMAGE" > /dev/null
 for _ in $(seq 1 180); do
     code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$WORK/instance.crt" -X POST \
@@ -44,7 +46,7 @@ code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$WORK/instance.crt" -X 
 [ "$code" = "401" ] || fail "instance mode accepted a request without the token (HTTP $code)"
 code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:17803/API/GetNewSession || true)"
 [ "$code" != "200" ] || fail "gateway answered over plain HTTP while TLS was configured"
-docker logs "$NAME" 2>&1 | grep -q "$TOKEN" && fail "worker token appears in container logs"
+docker logs "$NAME" 2>&1 | grep -qF -e "$TOKEN" -e "$CONFIG" && fail "worker token appears in container logs"
 docker rm -f "$NAME" > /dev/null
 
 echo "== Serverless refusals =="
