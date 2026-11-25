@@ -2,9 +2,10 @@
 # CPU smoke test for a built Vast worker image. Usage: tests/smoke/smoke.sh <image>
 # Vast's control plane is not reachable from CI, so this covers everything that can be checked
 # offline:
-#   1. Instance mode serves the gateway over TLS from /etc/instance.crt and enforces the token.
-#   2. Serverless mode refuses to start outside Vast, and refuses UNSECURED.
-#   3. The PyWorker wiring builds inside the image against the pinned vastai SDK.
+#   1. The entrypoint uses the worker config's volume_path, and stops on an invalid config.
+#   2. Instance mode serves the gateway over TLS from /etc/instance.crt and enforces the token.
+#   3. Serverless mode refuses to start outside Vast, and refuses UNSECURED.
+#   4. The PyWorker wiring builds inside the image against the pinned vastai SDK.
 set -euo pipefail
 
 IMAGE="$1"
@@ -24,6 +25,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "== Worker config in the entrypoint =="
+# An unknown mode stops the entrypoint right after it has picked the models.
+out="$(docker run --rm --tmpfs /data/Models -e SWARM_MODE=none -e SWARMUI_WORKER_CONFIG='{"volume_path":"/data"}' "$IMAGE" 2>&1 || true)"
+echo "$out" >> "$LOG"
+grep -qF "models: /data/Models" <<< "$out" || fail "the entrypoint did not use the config's volume_path"
+out="$(docker run --rm -e SWARM_MODE=none -e SWARMUI_WORKER_CONFIG='{"unknown":1}' "$IMAGE" 2>&1 || true)"
+echo "$out" >> "$LOG"
+grep -qF "Invalid configuration: SWARMUI_WORKER_CONFIG" <<< "$out" || fail "an invalid config was not reported"
+grep -qF "starting in" <<< "$out" && fail "the entrypoint carried on with an invalid config"
+
 echo "== Instance mode over TLS =="
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1" \
     -keyout "$WORK/instance.key" -out "$WORK/instance.crt" 2> /dev/null
@@ -31,7 +42,9 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=127.0.0.1" -addext 
 chmod 600 "$WORK/instance.key"
 chmod 644 "$WORK/instance.crt"
 TOKEN="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48)"
-docker run -d --name "$NAME" -p 127.0.0.1:17803:7801 -e SWARMUI_WORKER_TOKEN="$TOKEN" \
+# base64url without padding, as the Cloud Backends extension sends it.
+CONFIG="$(printf '{"worker_token":"%s"}' "$TOKEN" | base64 | tr '+/' '-_' | tr -d '=\n')"
+docker run -d --name "$NAME" -p 127.0.0.1:17803:7801 -e SWARMUI_WORKER_CONFIG="$CONFIG" \
     -v "$WORK/instance.crt:/etc/instance.crt:ro" -v "$WORK/instance.key:/etc/instance.key:ro" "$IMAGE" > /dev/null
 for _ in $(seq 1 180); do
     code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$WORK/instance.crt" -X POST \
@@ -44,7 +57,9 @@ code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$WORK/instance.crt" -X 
 [ "$code" = "401" ] || fail "instance mode accepted a request without the token (HTTP $code)"
 code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:17803/API/GetNewSession || true)"
 [ "$code" != "200" ] || fail "gateway answered over plain HTTP while TLS was configured"
-docker logs "$NAME" 2>&1 | grep -q "$TOKEN" && fail "worker token appears in container logs"
+# Read in full first: with pipefail, grep -q stopping at a match would fail the pipe and hide the leak.
+logs="$(docker logs "$NAME" 2>&1)"
+grep -qF -e "$TOKEN" -e "$CONFIG" <<< "$logs" && fail "worker token appears in container logs"
 docker rm -f "$NAME" > /dev/null
 
 echo "== Serverless refusals =="

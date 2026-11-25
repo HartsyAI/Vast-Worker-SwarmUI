@@ -146,7 +146,7 @@ def main() -> int:
         return 2
     logs.setup(config.log_level, config.log_json)
     if config.token:
-        log.error("SWARMUI_WORKER_TOKEN must not be set for serverless workers; each lease gets its own")
+        log.error("SWARMUI_WORKER_CONFIG must not have a worker_token on serverless workers; each lease gets its own")
         return 2
     if os.environ.get("UNSECURED", "").lower() in ("1", "true", "yes"):
         log.error("UNSECURED is set, which disables verification of Vast's signed requests; refusing to start")

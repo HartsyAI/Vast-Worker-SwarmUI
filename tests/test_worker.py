@@ -92,3 +92,15 @@ def test_bad_lifetime_falls_back_to_default():
     backend = FakeBackend(signature_ok=True)
     call(backend, {"auth_data": AUTH, "payload": {"lifetime": "forever"}})
     assert backend.created[0]["payload"]["lifetime"] == 60.0
+
+
+def test_main_refuses_a_fixed_token(monkeypatch, capsys):
+    for name in ("UNSECURED", "PUBLIC_IPADDR"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SWARMUI_WORKER_CONFIG", '{"worker_token": "%s"}' % ("y" * 48))
+    assert worker.main() == 2
+    assert "must not have a worker_token" in capsys.readouterr().err
+    # A config without a token is fine on serverless, so this gets as far as the missing Vast environment.
+    monkeypatch.setenv("SWARMUI_WORKER_CONFIG", '{"public_port": 7801}')
+    assert worker.main() == 2
+    assert "PUBLIC_IPADDR is not set" in capsys.readouterr().err

@@ -4,7 +4,7 @@
 #   serverless  A serverless workergroup sets REPORT_ADDR. Vast's PyWorker is the foreground process;
 #               it starts SwarmUI and hands out per-lease tokens through Vast sessions.
 #   instance    Anything else (a rented instance). The base image's standalone supervisor runs
-#               SwarmUI behind the gateway with a fixed token (SWARMUI_WORKER_TOKEN).
+#               SwarmUI behind the gateway with a fixed token (in SWARMUI_WORKER_CONFIG).
 #
 # Set SWARM_MODE=serverless or SWARM_MODE=instance to force a mode.
 set -euo pipefail
@@ -78,7 +78,9 @@ run() {
 
 # Instances may have a volume (Vast serverless cannot); use its models if it has any.
 if [ -z "${SWARMUI_MODEL_ROOT:-}" ]; then
-    for candidate in "${VOLUME_PATH:-/workspace}/SwarmUI/Models" "${VOLUME_PATH:-/workspace}/Models"; do
+    # An invalid worker config stops the container here, with the reason.
+    volume="$(run /opt/worker/venv/bin/python -m swarmui_worker.startup volume_path)"
+    for candidate in "${volume:-/workspace}/SwarmUI/Models" "${volume:-/workspace}/Models"; do
         if [ -d "$candidate" ]; then export SWARMUI_MODEL_ROOT="$candidate"; break; fi
     done
 fi
