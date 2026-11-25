@@ -73,7 +73,7 @@ To run one by hand: rent an instance with this image in entrypoint mode (runtype
 |---|---|---|
 | `WORKER_PORT` | *(template)* | The PyWorker's port. Required for serverless. |
 | `SWARMUI_WORKER_CONFIG` | *(none)* | The [worker config](https://github.com/HartsyAI/SwarmUI-Worker-Base#worker-config), one JSON object: `worker_token`, `public_port` and `volume_path`. Instances need a `worker_token`. Serverless refuses one, because each lease gets its own token. Without `volume_path`, the volume is looked for at `/workspace`. |
-| `SWARMUI_MODEL_ROOT` | the image's models, or `/workspace/Models` on instances | Where the models are. |
+| `SWARMUI_MODEL_ROOT` | the image's models, or `Models` on an instance's volume | Where the models are. |
 | `SWARM_MODE` | `auto` | `serverless` or `instance`. Detected from `REPORT_ADDR`, which Vast sets only for serverless workers. |
 
 The base image's full list is in the [SwarmUI-Worker-Base README](https://github.com/HartsyAI/SwarmUI-Worker-Base#configuration). On Vast Serverless the session's lifetime decides when a worker is released, so the base's idle and lease-length settings apply to instances only.
